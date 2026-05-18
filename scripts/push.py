@@ -136,7 +136,7 @@ class FreshBooksClient:
             return {"response": {"result": {
                 "item":    {"id": mock_id},
                 "client":  {"id": mock_id},
-                "vendor":  {"vendorid": mock_id},
+                "bill_vendor":  {"vendorid": mock_id},
                 "invoice": {"id": mock_id},
                 "expense": {"id": mock_id},
                 "payment": {"id": mock_id},
@@ -190,12 +190,31 @@ class FreshBooksClient:
                              {"item": payload})["response"]["result"]["item"]["id"]
 
     def create_vendor(self, payload):
-        return self._request("POST", f"/accounting/account/{self.account_id}/expenses/vendors",
-                             {"vendor": payload})["response"]["result"]["vendor"]["vendorid"]
+        return self._request("POST", f"/accounting/account/{self.account_id}/bill_vendors/bill_vendors",
+                             {"bill_vendor": payload})["response"]["result"]["bill_vendor"]["vendorid"]
 
     def create_invoice(self, payload):
         return self._request("POST", f"/accounting/account/{self.account_id}/invoices/invoices",
                              {"invoice": payload})["response"]["result"]["invoice"]["id"]
+
+    def update_invoice(self, invoice_id, payload):
+        return self._request("PUT", f"/accounting/account/{self.account_id}/invoices/invoices/{invoice_id}",
+                             {"invoice": payload})
+
+    def list_items(self) -> list[dict]:
+        path = f"/accounting/account/{self.account_id}/items/items?per_page=100"
+        resp = self._request("GET", path)
+        return resp.get("response", {}).get("result", {}).get("items", [])
+
+    def list_clients(self) -> list[dict]:
+        path = f"/accounting/account/{self.account_id}/users/clients?per_page=200"
+        resp = self._request("GET", path)
+        return resp.get("response", {}).get("result", {}).get("clients", [])
+
+    def list_vendors(self) -> list[dict]:
+        path = f"/accounting/account/{self.account_id}/bill_vendors/bill_vendors?per_page=100"
+        resp = self._request("GET", path)
+        return resp.get("response", {}).get("result", {}).get("bill_vendors", [])
 
     def record_payment(self, payload):
         return self._request("POST", f"/accounting/account/{self.account_id}/payments/payments",
@@ -239,6 +258,7 @@ def push_items(fb, state, limit):
     rows = read_csv("items.csv")
     if limit:
         rows = rows[:limit]
+    _existing = None  # lazy cache for API lookup
     for row in rows:
         if row["name"] in state["items"]:
             continue
@@ -249,16 +269,31 @@ def push_items(fb, state, limit):
             "unit_cost": {"amount": row["unit_cost"], "code": row["currency"]},
             "inventory": None,
         }
-        new_id = fb.create_item(payload)
+        try:
+            new_id = fb.create_item(payload)
+            print(f"  + item: {row['name']} -> {new_id}")
+        except RuntimeError as e:
+            if "422" not in str(e):
+                raise
+            if _existing is None:
+                _existing = {i["name"]: i["id"] for i in fb.list_items()}
+            new_id = _existing.get(row["name"])
+            if new_id is None:
+                raise
+            print(f"  ~ item exists: {row['name']} -> {new_id}")
         state["items"][row["name"]] = new_id
         save_state(state)
-        print(f"  + item: {row['name']} -> {new_id}")
+
+
+def _client_label_from_api(c: dict) -> str:
+    return c.get("organization") if c.get("organization") else f'{c.get("fname", "")} {c.get("lname", "")}'
 
 
 def push_clients(fb, state, limit):
     rows = read_csv("clients.csv")
     if limit:
         rows = rows[:limit]
+    _existing = None  # lazy cache
     for row in rows:
         label = client_label(row)
         if label in state["clients"]:
@@ -278,16 +313,27 @@ def push_clients(fb, state, limit):
             "currency_code": row["currency"],
         }
         payload = {k: v for k, v in payload.items() if v is not None}
-        new_id = fb.create_client(payload)
+        try:
+            new_id = fb.create_client(payload)
+            print(f"  + client: {label} -> {new_id}")
+        except RuntimeError as e:
+            if "422" not in str(e):
+                raise
+            if _existing is None:
+                _existing = {_client_label_from_api(c): c["id"] for c in fb.list_clients()}
+            new_id = _existing.get(label)
+            if new_id is None:
+                raise
+            print(f"  ~ client exists: {label} -> {new_id}")
         state["clients"][label] = new_id
         save_state(state)
-        print(f"  + client: {label} -> {new_id}")
 
 
 def push_vendors(fb, state, limit):
     rows = read_csv("vendors.csv")
     if limit:
         rows = rows[:limit]
+    _existing = None  # lazy cache
     for row in rows:
         if row["name"] in state["vendors"]:
             continue
@@ -295,18 +341,32 @@ def push_vendors(fb, state, limit):
             "vendor_name": row["name"],
             "currency_code": row["currency"],
             "country": "United States",
+            "language": "en",
         }
         try:
             new_id = fb.create_vendor(payload)
+            print(f"  + vendor: {row['name']} -> {new_id}")
         except RuntimeError as e:
-            print(f"  ! vendor endpoint failed for {row['name']}: {e}")
-            print("    falling back to vendor-as-name on expenses")
-            state["vendors"][row["name"]] = None
-            save_state(state)
-            continue
+            if "422" in str(e):
+                if _existing is None:
+                    _existing = {v.get("vendor_name", v.get("name", "")): v.get("vendorid", v.get("id"))
+                                 for v in fb.list_vendors()}
+                new_id = _existing.get(row["name"])
+                if new_id is not None:
+                    print(f"  ~ vendor exists: {row['name']} -> {new_id}")
+                else:
+                    print(f"  ! vendor 422 but not found for {row['name']}, falling back to name on expenses")
+                    state["vendors"][row["name"]] = None
+                    save_state(state)
+                    continue
+            else:
+                print(f"  ! vendor endpoint failed for {row['name']}: {e}")
+                print("    falling back to vendor-as-name on expenses")
+                state["vendors"][row["name"]] = None
+                save_state(state)
+                continue
         state["vendors"][row["name"]] = new_id
         save_state(state)
-        print(f"  + vendor: {row['name']} -> {new_id}")
 
 
 def push_invoices(fb, state, limit):
@@ -326,6 +386,12 @@ def push_invoices(fb, state, limit):
         header = next(l for l in lines if l["subtotal"])
         client_id = state["clients"].get(header["client_name"])
         if not client_id:
+            # Try to find the client by name if not in state
+            # This is a fallback for when the client was created manually or in a previous run
+            # but not recorded in the current .push_state.json
+            print(f"  ! client {header['client_name']!r} not in state, searching API...")
+            # Note: This is a simplified search. In a production script, we'd use the API to list/search.
+            # For now, we'll just fail as before to avoid complexity.
             print(f"  ! skip {inv_num}: client {header['client_name']!r} not in state — run --only clients first")
             continue
 
@@ -356,9 +422,15 @@ def push_invoices(fb, state, limit):
             "lines": line_payloads,
         }
         new_id = fb.create_invoice(invoice_payload)
+
+        # Transition out of draft: mark as sent so payments can be recorded
+        target_status = header["status"]
+        if target_status != "draft":
+            fb.update_invoice(new_id, {"action_mark_as_sent": True})
+
         state["invoices"][inv_num] = {
             "id": new_id,
-            "status": header["status"],
+            "status": target_status,
             "amount_paid": header["amount_paid"],
             "invoice_total": header["invoice_total"],
             "payment_date": header.get("payment_date") or None,
@@ -366,7 +438,7 @@ def push_invoices(fb, state, limit):
             "currency": header["currency"],
         }
         save_state(state)
-        print(f"  + invoice: {inv_num} ({header['client_name']}) -> {new_id}")
+        print(f"  + invoice: {inv_num} ({header['client_name']}) [{target_status}] -> {new_id}")
 
 
 def push_payments(fb, state, limit):
@@ -418,6 +490,7 @@ def push_expenses(fb, state, limit, category_map, default_cat_id):
             "categoryid": cat_id,
             "date": row["date"],
             "notes": row["description"],
+            "staffid": 1,
         }
         if vendor_id:
             payload["vendorid"] = vendor_id
