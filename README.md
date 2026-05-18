@@ -17,6 +17,7 @@ freshbooks-data-gen/
 └── scripts/
     ├── generate.py                # Build the CSVs with Faker
     ├── verify.py                  # Cross-reference + math + status sanity checks
+    ├── get_token.py               # Walk through FreshBooks OAuth, capture bearer token
     └── push.py                    # Push the CSVs into FreshBooks via the REST API
 ```
 
@@ -69,11 +70,24 @@ The verification script checks:
 
 A passing run ends with `OK`. Any issues are reported as math or reference errors with `FAIL`.
 
-### Push into FreshBooks
+### 4. Get a FreshBooks bearer token
+
+Use the included helper. It walks the OAuth flow, captures the redirect on a local port, and writes credentials to a gitignored `.env` file.
 
 ```bash
-export FRESHBOOKS_TOKEN="eyJ0eXAiOi..."         # OAuth bearer token
-export FRESHBOOKS_ACCOUNT_ID="abc123"           # optional; resolved from /users/me if omitted
+python3 scripts/get_token.py
+```
+
+The first time you run it, you'll need a Client ID and Client Secret. Create those once at https://my.freshbooks.com/#/developer ("Create an App"). Register `https://localhost:8765/callback` as the redirect URI (the helper expects exactly this).
+
+After authorizing in the browser, you'll land on `https://localhost:8765/callback?code=...` and the page will fail to load — that's expected. Change `https://` to `http://` in the URL bar and press Enter; the helper picks up from there and writes your token to `.env`.
+
+See the "Getting a FreshBooks token" section below for the full walkthrough.
+
+### 5. Push into FreshBooks
+
+```bash
+set -a; source .env; set +a                     # load FRESHBOOKS_TOKEN from .env
 
 # Smoke test against your account
 python3 scripts/push.py --dry-run --limit 2
@@ -84,6 +98,8 @@ python3 scripts/push.py --limit 2
 # Full run
 python3 scripts/push.py
 ```
+
+`FRESHBOOKS_ACCOUNT_ID` is optional. If unset, the pusher resolves it from `/auth/api/v1/users/me`.
 
 The pusher creates records in dependency order — **items → clients → vendors → invoices → payments → expenses** — and writes each created record's FreshBooks ID into `scripts/.push_state.json`. Re-running skips anything already in state, so a partial failure can resume cleanly.
 
@@ -100,14 +116,37 @@ Resource names accepted by `--only`: `items, clients, vendors, invoices, payment
 
 ## Getting a FreshBooks token
 
-The cleanest path for personal seeding is the FreshBooks OAuth flow:
+FreshBooks requires OAuth 2.0 — no personal-access-token shortcut. The full walkthrough:
 
-1. Go to FreshBooks → Settings → Developer Portal → My Apps → Create App
-2. Get an Authorization Code via the OAuth redirect flow
-3. Exchange it for a Bearer token (12-hour TTL)
-4. Set `FRESHBOOKS_TOKEN` from that bearer
+**One-time app setup (in your browser)**
 
-Full walk-through: https://www.freshbooks.com/api/get-authenticated-on-the-freshbooks-api
+1. Sign in to FreshBooks, go to https://my.freshbooks.com/#/developer
+2. Click **Create an App**
+3. Fill in any name and description
+4. **Redirect URI:** `https://localhost:8765/callback`  (must match the helper exactly)
+5. Save. FreshBooks shows you a **Client ID** and **Client Secret**
+
+**Token capture (in your terminal)**
+
+```bash
+python3 scripts/get_token.py
+```
+
+The helper:
+
+- Prompts for Client ID + Client Secret (or reads `FRESHBOOKS_CLIENT_ID` / `FRESHBOOKS_CLIENT_SECRET` env vars)
+- Opens your browser to the FreshBooks authorize URL
+- Spins up a tiny local HTTP listener on port 8765
+- Catches the authorization code, exchanges it for a bearer token
+- Writes the token (and refresh token) to `.env` in the repo root
+
+**The HTTPS-on-localhost wrinkle**
+
+FreshBooks requires HTTPS in the redirect URI it stores, but the local listener is plain HTTP. After clicking Authorize, your browser will land on `https://localhost:8765/callback?code=...` and fail to load. **Change the URL bar from `https://` to `http://` and press Enter.** The local server is listening there and will catch the code automatically.
+
+Access tokens have a 12-hour TTL. The `.env` file also stores a `FRESHBOOKS_REFRESH_TOKEN` you can use to mint a fresh one without going through the browser again.
+
+FreshBooks' own walk-through: https://www.freshbooks.com/api/get-authenticated-on-the-freshbooks-api
 
 ## Importing without the API (CSV upload)
 

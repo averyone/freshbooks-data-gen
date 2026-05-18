@@ -1,3 +1,6 @@
+# Secrets — written by scripts/get_token.py
+.env
+
 # Pusher state — contains FreshBooks IDs tied to your account
 scripts/.push_state.json
 
