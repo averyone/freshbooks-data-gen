@@ -32,17 +32,42 @@ freshbooks-data-gen/
 - **Tax:** ~60% of invoices charge state sales tax against nexus customers
 - **Cross-refs guaranteed:** every invoice client and item, every expense vendor, resolves cleanly
 
+## Prerequisites
+
+- **Python 3.8+**
+- **pip** (for installing dependencies)
+- **FreshBooks account** (only needed if pushing via API; a trial account is recommended)
+
 ## Quick start
 
-### Regenerate the CSVs
+### 1. Install dependencies
 
 ```bash
 pip install -r requirements.txt
+```
+
+The only external dependency is [Faker](https://faker.readthedocs.io/) (used by the generator). The verify and push scripts use only the Python standard library.
+
+### 2. Generate the CSVs
+
+```bash
 python3 scripts/generate.py
-python3 scripts/verify.py
 ```
 
 The seed is fixed (`SEED = 42`), so every run yields the same data. Change the seed at the top of `generate.py` for a fresh batch, or shift `END_DATE` for a different time window.
+
+### 3. Verify data integrity
+
+```bash
+python3 scripts/verify.py
+```
+
+The verification script checks:
+- **Cross-references** — every invoice `client_name` and `item_name` exists in `clients.csv` / `items.csv`; every expense `vendor` exists in `vendors.csv`
+- **Invoice math** — line totals sum to subtotal; subtotal + tax = invoice total
+- **Reports** — date range, invoice status mix, monthly volume distribution, financial totals, and top vendors by spend
+
+A passing run ends with `OK`. Any issues are reported as math or reference errors with `FAIL`.
 
 ### Push into FreshBooks
 
