@@ -1,0 +1,26 @@
+name,category,currency,country
+UPS,Shipping & Postage,USD,US
+USPS,Shipping & Postage,USD,US
+FedEx,Shipping & Postage,USD,US
+ShipStation,Software & Subscriptions,USD,US
+Shopify,Software & Subscriptions,USD,US
+Klaviyo,Software & Subscriptions,USD,US
+Stripe Fees,Bank & Processor Fees,USD,US
+PayPal Fees,Bank & Processor Fees,USD,US
+Meta Ads,Advertising & Marketing,USD,US
+Google Ads,Advertising & Marketing,USD,US
+TikTok Ads,Advertising & Marketing,USD,US
+Adobe Creative Cloud,Software & Subscriptions,USD,US
+AWS,Software & Subscriptions,USD,US
+Avalara Sales Tax,Software & Subscriptions,USD,US
+Northern Leather Supply,Cost of Goods Sold,USD,US
+Pacific Coast Textiles,Cost of Goods Sold,USD,US
+Cedar Mill Lumber Co,Cost of Goods Sold,USD,US
+Uline Packaging,Packaging & Supplies,USD,US
+EcoEnclose,Packaging & Supplies,USD,US
+WeWork Studio Space,Rent,USD,US
+Pacific Gas & Electric,Utilities,USD,US
+AT&T Business,Utilities,USD,US
+Hartford Business Insurance,Insurance,USD,US
+Bench Bookkeeping,Professional Services,USD,US
+California Franchise Tax Board,Taxes,USD,US

@@ -1,0 +1,2 @@
+# Generator only — push.py uses stdlib (urllib) so it has no extra deps.
+Faker>=25.0
