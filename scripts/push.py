@@ -245,8 +245,8 @@ def read_csv(name: str) -> list[dict]:
 # ------------------------------------------------------------------ #
 
 PAYMENT_METHOD_MAP = {
-    "Credit Card": "credit", "Stripe": "credit", "ACH": "ach",
-    "PayPal": "paypal", "Check": "check",
+    "Credit Card": "Cash", "Stripe": "Cash", "ACH": "Bank Transfer",
+    "PayPal": "Cash", "Check": "Check",
 }
 
 
